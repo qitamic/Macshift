@@ -45,10 +45,16 @@ static std::string randomMac();
 static std::string findAdapterId(const std::string& adapterName);
 static void setMac(const std::string& adapterId, const std::string& newMac);
 static void resetAdapter(const std::string& AdapterName);
+static void setRandomMacState(const std::string& adapterId);
+static void coloredText(bool setclear);
 
 
 int main(int argc, char** argv) {
 	std::cerr << "Macshift v2.0 - the simple Windows MAC address changing utility" << std::endl;
+	coloredText(true);
+	std::cout << "Macshift v2.0-qitamic1.1 https://github.com/qitamic/Macshift" << std::endl;
+	coloredText(false);
+
 
 	std::vector<std::string> argVec;
 	for (int i = 0; i < argc; i++)
@@ -123,6 +129,7 @@ static void submain(const std::vector<std::string>& argVec) {
 	std::string adapterId = findAdapterId(adapterName);
 	std::cerr << "Network adapter ID: " << adapterId << std::endl;
 	setMac(adapterId, newMac);
+	setRandomMacState(adapterId);
 	resetAdapter(adapterName);
 }
 
@@ -153,6 +160,16 @@ static void showHelp(const std::string& exePath) {
 	for (const char* line : LINES)
 		std::cerr << line << std::endl;
 
+	std::cerr << std::endl;
+	coloredText(true);	
+	std::cerr << "RandomMacState" << std::endl;
+	coloredText(false);
+	std::cerr << "Computer\\HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WlanSvc\\Interfaces\\" << std::endl;
+	coloredText(true);
+	std::cerr << "NetworkAddress" << std::endl;
+	coloredText(false);
+	std::cerr << "Computer\\HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\" << std::endl;
+	
 	std::exit(EXIT_FAILURE);
 }
 
@@ -161,7 +178,7 @@ static std::string formatMac(const std::string& str) {
 	std::string s = "";
 	for (int i = 0; i < str.size(); i++) {
 		char c = str.at(i);
-		if (c != ':' && c != '-' && c != ' ')
+		if (c != ':' && c != '-')
 			s += c;
 	}
 	return s;
@@ -284,14 +301,31 @@ static void setMac(const std::string& adapterId, const std::string& newMac) {
 		if (RegQueryValueEx(hKey, "NetCfgInstanceId", nullptr, nullptr, reinterpret_cast<LPBYTE>(value.data()), &valueLen) == ERROR_SUCCESS
 			&& std::string(value.data()) == adapterId) {
 			if (RegSetValueEx(hKey, "NetworkAddress", 0, REG_SZ, reinterpret_cast<const BYTE*>(newMac.c_str()), static_cast<DWORD>(newMac.size() + 1)) != ERROR_SUCCESS)
-				throw std::runtime_error("Failed to set registry key");
-			std::cerr << "Wrote registry key" << std::endl;
+				throw std::runtime_error("Failed write NetworkAddress");
+			std::cerr << "Wrote NetworkAddress" << std::endl;
 			return;  // Success
 		}
 	}
 	throw std::runtime_error("Failed to find adapter by ID; please run this program as Administrator");
 }
-
+static void setRandomMacState(const std::string& adapterId){
+	coloredText(true);
+	std::cout << "Write RandomMacState... ";
+	std::string reg = "SOFTWARE\\Microsoft\\WlanSvc\\Interfaces\\" + adapterId;
+	HKEY hKey;
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, reg.c_str(), 0, KEY_SET_VALUE | KEY_WOW64_64KEY, &hKey) == ERROR_SUCCESS){
+		byte data[] = { 01, 00, 00, 00 };
+		if (RegSetValueEx(hKey, "RandomMacState", 0, REG_BINARY, (LPBYTE)data, sizeof(data) / sizeof(data[0])) == ERROR_SUCCESS)
+			std::cout << "Done" << std::endl;
+		else
+			throw std::runtime_error("Failed"); //will it come here?
+	}
+	else {
+		std::cout << "Failed (not a Wi-Fi adapter?)" << std::endl;
+	}
+	auto hListKeyFinally = finally([hKey] { RegCloseKey(hKey); });	
+	coloredText(false);
+}
 
 static void resetAdapter(const std::string& adapterName) {
 	HMODULE netshellLib = LoadLibrary("Netshell.dll");
@@ -349,3 +383,24 @@ static void resetAdapter(const std::string& adapterName) {
 	}
 	throw std::runtime_error("Failed to find adapter by name");
 }
+
+static DWORD colorOriginalOut, colorOriginalErr;
+static void coloredText(bool setclear)
+{
+	HANDLE hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+	HANDLE hConsoleErr = GetStdHandle(STD_ERROR_HANDLE);
+	if (setclear){
+		CONSOLE_SCREEN_BUFFER_INFO InfoOut, InfoErr;
+		GetConsoleScreenBufferInfo(hConsoleOut, &InfoOut); //original
+		GetConsoleScreenBufferInfo(hConsoleErr, &InfoErr); //original
+		colorOriginalOut = InfoOut.wAttributes;
+		colorOriginalErr = InfoErr.wAttributes;
+		https://stackoverflow.com/questions/4053837/colorizing-text-in-the-console-with-c
+		SetConsoleTextAttribute(hConsoleOut, 14);
+		SetConsoleTextAttribute(hConsoleErr, 14);
+	} else{
+		SetConsoleTextAttribute(hConsoleOut, colorOriginalOut);
+		SetConsoleTextAttribute(hConsoleErr, colorOriginalErr);
+	}	
+}
+

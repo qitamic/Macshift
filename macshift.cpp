@@ -46,13 +46,14 @@ static std::string findAdapterId(const std::string& adapterName);
 static void setMac(const std::string& adapterId, const std::string& newMac);
 static void resetAdapter(const std::string& AdapterName);
 static void setRandomMacState(const std::string& adapterId);
+static void clearLease(const std::string& adapterId);
 static void coloredText(bool setclear);
 
 
 int main(int argc, char** argv) {
 	std::cerr << "Macshift v2.0 - the simple Windows MAC address changing utility" << std::endl;
 	coloredText(true);
-	std::cout << "Macshift v2.0-qitamic1.1 https://github.com/qitamic/Macshift" << std::endl;
+	std::cout << "Macshift v2.0-qitamic1.3 https://github.com/qitamic/Macshift" << std::endl;
 	coloredText(false);
 
 
@@ -130,6 +131,7 @@ static void submain(const std::vector<std::string>& argVec) {
 	std::cerr << "Network adapter ID: " << adapterId << std::endl;
 	setMac(adapterId, newMac);
 	setRandomMacState(adapterId);
+	clearLease(adapterId);
 	resetAdapter(adapterName);
 }
 
@@ -165,6 +167,10 @@ static void showHelp(const std::string& exePath) {
 	std::cerr << "RandomMacState" << std::endl;
 	coloredText(false);
 	std::cerr << "Computer\\HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\WlanSvc\\Interfaces\\" << std::endl;
+	coloredText(true);
+	std::cerr << "DhcpIPAddress DhcpSubnetMask DhcpServer DhcpDefaultGateway DhcpNameServer" << std::endl;
+	coloredText(false);
+	std::cerr << "Computer\\HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces" << std::endl;
 	coloredText(true);
 	std::cerr << "NetworkAddress" << std::endl;
 	coloredText(false);
@@ -313,7 +319,7 @@ static void setRandomMacState(const std::string& adapterId){
 	std::cout << "Write RandomMacState... ";
 	std::string reg = "SOFTWARE\\Microsoft\\WlanSvc\\Interfaces\\" + adapterId;
 	HKEY hKey;
-	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, reg.c_str(), 0, KEY_SET_VALUE | KEY_WOW64_64KEY, &hKey) == ERROR_SUCCESS){
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, reg.c_str(), 0, KEY_SET_VALUE | KEY_WOW64_64KEY, &hKey) == ERROR_SUCCESS) {
 		byte data[] = { 01, 00, 00, 00 };
 		if (RegSetValueEx(hKey, "RandomMacState", 0, REG_BINARY, (LPBYTE)data, sizeof(data) / sizeof(data[0])) == ERROR_SUCCESS)
 			std::cout << "Done" << std::endl;
@@ -326,7 +332,51 @@ static void setRandomMacState(const std::string& adapterId){
 	auto hListKeyFinally = finally([hKey] { RegCloseKey(hKey); });	
 	coloredText(false);
 }
+static void clearLease(const std::string& adapterId)
+{
+	coloredText(true);
+	std::cout << "Clear DHCP lease... ";
 
+	// Path to the specific interface in the registry
+	std::string subKey = "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\" + adapterId;
+
+	HKEY hKey;
+	// Open the key with SET_VALUE permissions to allow deletion
+	LSTATUS status = RegOpenKeyExA(HKEY_LOCAL_MACHINE, subKey.c_str(), 0, KEY_SET_VALUE, &hKey);
+
+	if (status == ERROR_SUCCESS) {
+		// List of DHCP values to clear
+		std::vector<std::string> valuesToDelete = {
+			"DhcpIPAddress",
+			"DhcpSubnetMask",
+			"DhcpServer",
+			"DhcpDefaultGateway",
+			"DhcpNameServer"
+		};
+
+		bool error = false;
+		LSTATUS delStatus;
+		for (const auto& value : valuesToDelete) {
+			delStatus = RegDeleteValueA(hKey, value.c_str());
+			if (delStatus == ERROR_SUCCESS) {
+			}
+			else if (delStatus != ERROR_FILE_NOT_FOUND) {
+				error = true;
+			}
+		}
+		if(error)
+			std::cerr << "Failed! (" << delStatus << ")" << std::endl;
+		else
+			std::cout << "Done" << std::endl;
+
+		coloredText(false);
+		RegCloseKey(hKey);
+	}
+	else {
+		std::cerr << "Could not open registry key. Ensure you are running as Admin. Error: " << status << std::endl;
+	}
+	
+}
 static void resetAdapter(const std::string& adapterName) {
 	HMODULE netshellLib = LoadLibrary("Netshell.dll");
 	if (netshellLib == nullptr)
